@@ -7,7 +7,7 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-- group: EC2DeploymentVars
+- group: EC2DeploymentVars  # your variable group containing AZURE_DEVOPS_TOKEN
 
 steps:
 - task: NodeTool@0
@@ -38,12 +38,15 @@ steps:
     AZURE_DEVOPS_TOKEN: $(AZURE_DEVOPS_TOKEN)
   displayName: 'Run Semantic Release'
 
-# Extract version from Semantic Release output
+# Extract version from Semantic Release dry run output
 - script: |
     VERSION=$(npx semantic-release --dry-run | grep 'next release version' | awk '{print $NF}')
     echo "##vso[task.setvariable variable=RELEASE_VERSION]$VERSION"
+  env:
+    AZURE_DEVOPS_TOKEN: $(AZURE_DEVOPS_TOKEN)
   displayName: 'Extract Version'
 
+# Copy files over SSH to your EC2 instance
 - task: CopyFilesOverSSH@0
   displayName: 'Copying files to remote server and cleaning target folder'
   inputs:
@@ -53,12 +56,13 @@ steps:
     targetFolder: '/var/www/html'
     cleanTargetFolder: true
 
+# Restart Nginx and export version info
 - task: SSH@0
-  displayName: 'Deploying and Reloading Nginx'
+  displayName: 'Reloading Nginx and echoing release version'
   inputs:
     sshEndpoint: 'ec2-ssh-connection'
     runOptions: 'inline'
     inline: |
+      sudo systemctl restart nginx
       export RELEASE_VERSION=$(RELEASE_VERSION)
       echo "Deploying version $RELEASE_VERSION"
-      sudo systemctl restart nginx
